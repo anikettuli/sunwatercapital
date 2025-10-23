@@ -10,7 +10,7 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.db_manager import DBManager
-from src.llm import get_bill_data, add_hyperlinks
+from src.llm import get_all_bill_data, add_hyperlinks
 from src.workers import QueryWorker
 
 # --- Mocks and Fixtures ---
@@ -48,9 +48,9 @@ def test_db_storage_and_retrieval(db_manager):
     Tests that the DBManager can store, update, and retrieve answers correctly.
     """
     bill_id = "hr123"
-    db_manager.store_answer(bill_id, 1, "Question 1", "Answer 1")
-    db_manager.store_answer(bill_id, 2, "Question 2", "Answer 2")
-    db_manager.store_answer(bill_id, 1, "Question 1", "Updated Answer 1") # Update
+    db_manager.record_answered_question(bill_id, 1, "Question 1", "Answer 1")
+    db_manager.record_answered_question(bill_id, 2, "Question 2", "Answer 2")
+    db_manager.record_answered_question(bill_id, 1, "Question 1", "Updated Answer 1") # Update
 
     answers = db_manager.get_answers_for_bill(bill_id)
     assert len(answers) == 2
@@ -59,18 +59,20 @@ def test_db_storage_and_retrieval(db_manager):
 
 def test_api_url_formatting(mock_config):
     """
-    Tests that the get_bill_data function formats the API URL correctly.
+    Tests that the get_all_bill_data function formats the API URL correctly.
     """
     with patch('src.llm.requests.get') as mock_get:
-        get_bill_data("s567", "s", "117", "test_key")
+        mock_get.return_value.json.return_value = {"bill": {}}
+        get_all_bill_data("s567", "s", "117", "test_key")
         expected_url = "https://api.congress.gov/v3/bill/117/s/567?api_key=test_key"
-        mock_get.assert_called_once_with(expected_url)
+        # Check that the main bill API was called
+        assert any(expected_url in str(call) for call in mock_get.call_args_list)
 
 def test_hyperlink_generation():
     """
     Tests that the add_hyperlinks function correctly adds Markdown links.
     """
-    sample_text = "This article is about hr987, sponsored by Jane Smith."
+    sample_text = "This article is about H.R. 987, sponsored by Jane Smith."
     sample_bill_data = {
         "bill": {
             "congress": "118", "type": "hr", "number": "987",
@@ -78,12 +80,12 @@ def test_hyperlink_generation():
         }
     }
     result = add_hyperlinks(sample_text, sample_bill_data)
-    assert "[hr987](https://www.congress.gov/bill/118th-congress/hr-bill/987)" in result
+    assert "[HR987](https://www.congress.gov/bill/118th-congress/hr-bill/987)" in result
     assert "[Jane Smith](https://congress.gov/member/jane-smith)" in result
 
 @patch('src.workers.KafkaProducer')
 @patch('src.workers.KafkaConsumer')
-@patch('src.workers.get_bill_data', return_value={"bill": "data"})
+@patch('src.workers.get_all_bill_data', return_value={"bill": "data"})
 @patch('src.workers.get_answer_from_bill', return_value="Test Answer")
 def test_query_worker_stores_answer(mock_get_answer, mock_get_bill, mock_KafkaConsumer, mock_KafkaProducer, db_manager, mock_config):
     """
@@ -103,7 +105,7 @@ def test_query_worker_stores_answer(mock_get_answer, mock_get_bill, mock_KafkaCo
 
 @patch('src.workers.KafkaProducer')
 @patch('src.workers.KafkaConsumer')
-@patch('src.workers.get_bill_data', return_value={"bill": "data"})
+@patch('src.workers.get_all_bill_data', return_value={"bill": "data"})
 @patch('src.workers.get_answer_from_bill', return_value="Test Answer")
 def test_article_worker_trigger(mock_get_answer, mock_get_bill, mock_KafkaConsumer, mock_KafkaProducer, db_manager, mock_config):
     """

@@ -11,7 +11,7 @@ from kafka import KafkaConsumer, KafkaProducer
 from . import config
 from .config import QUESTIONS
 from .db_manager import db_manager
-from .llm import get_bill_data, get_answer_from_bill, generate_article_from_answers, add_hyperlinks
+from .llm import get_all_bill_data, get_answer_from_bill, generate_article_from_answers, add_hyperlinks
 from .metrics import file_write_lock
 
 
@@ -61,7 +61,7 @@ class QueryWorker(threading.Thread):
             print(f"\n[Query Worker] Received task for Bill {bill_id.upper()}, Q{question_id}")
 
             print(f"[Query Worker] Making API call to Congress.gov for {bill_id.upper()}")
-            bill_data = get_bill_data(bill_id, bill_type, congress, config.CONGRESS_API_KEY)
+            bill_data = get_all_bill_data(bill_id, bill_type, congress, config.CONGRESS_API_KEY)
 
             if not bill_data:
                 answer = "Could not retrieve bill data."
@@ -70,8 +70,7 @@ class QueryWorker(threading.Thread):
                 print(f"[Query Worker] Sending to LLM for Q{question_id}: '{question}'")
                 answer = get_answer_from_bill(bill_data, question)
 
-            self.db_manager.store_answer(bill_id, question_id, question, answer)
-            self.db_manager.mark_answer_complete(bill_id, question_id)
+            self.db_manager.record_answered_question(bill_id, question_id, question, answer)
             print(f"[Query Worker] Stored answer for {bill_id.upper()}, Q{question_id}")
 
             if self.db_manager.are_all_questions_answered(bill_id):
@@ -153,7 +152,7 @@ class ArticleWorker(threading.Thread):
             answers = self.db_manager.get_answers_for_bill(bill_id)
 
             print(f"[Article Worker] Retrieving full bill data for {bill_id.upper()}.")
-            bill_data = get_bill_data(bill_id, bill_type, congress, config.CONGRESS_API_KEY)
+            bill_data = get_all_bill_data(bill_id, bill_type, congress, config.CONGRESS_API_KEY)
 
             print(f"[Article Worker] Sending to LLM to generate article for {bill_id.upper()}.")
             article_text = generate_article_from_answers(answers)
@@ -293,7 +292,7 @@ class ValidatedArticleWorker(threading.Thread):
             bill_title = bill_data.get("bill", {}).get("title", "N/A")
             sponsor_info = bill_data.get("bill", {}).get("sponsors", [{}])[0]
             sponsor_bioguide_id = sponsor_info.get("bioguideId", "N/A")
-            committees_data = bill_data.get("bill", {}).get("committees", {}).get("items", [])
+            committees_data = bill_data.get("bill", {}).get("committees", [])
             committee_ids = [c.get("systemCode") for c in committees_data if c.get("systemCode")]
 
             output_data = {

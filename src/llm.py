@@ -18,6 +18,52 @@ from .config import (
 from .metrics import metrics
 
 
+def _get_bill_sub_resource(
+    base_url: str, api_key: str, sub_resource: str
+) -> dict:
+    """A helper function to fetch sub-resources for a bill."""
+    url = f"{base_url}/{sub_resource}?api_key={api_key}"
+    try:
+        start_time = time.time()
+        response = requests.get(url)
+        response.raise_for_status()
+        metrics.add_congress_api_time(time.time() - start_time)
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching {sub_resource} data from {url}: {e}")
+        return {}
+
+
+def get_all_bill_data(
+    bill_id: str, bill_type: str, congress: str, api_key: str
+) -> dict:
+    """
+    Fetches comprehensive data for a bill including details, amendments, and committees.
+    """
+    match = re.match(r"[a-zA-Z]+(\d+)", bill_id)
+    if not match:
+        print(f"Error: Invalid bill_id format: {bill_id}")
+        return {}
+    bill_number = match.group(1)
+
+    base_url = (
+        f"https://api.congress.gov/v3/bill/{congress}/{bill_type}/{bill_number}"
+    )
+
+    bill_data = get_bill_data(bill_id, bill_type, congress, api_key)
+    if not bill_data or "bill" not in bill_data:
+        return {}  # Stop if the main bill data failed
+
+    amendments = _get_bill_sub_resource(base_url, api_key, "amendments")
+    committees = _get_bill_sub_resource(base_url, api_key, "committees")
+
+    # Combine all data into one dictionary
+    bill_data["bill"]["amendments"] = amendments.get("amendments", [])
+    bill_data["bill"]["committees"] = committees.get("committees", [])
+
+    return bill_data
+
+
 def get_bill_data(bill_id: str, bill_type: str, congress: str, api_key: str) -> dict:
     """
     Fetches detailed data for a specific bill from the Congress.gov API.
@@ -164,9 +210,12 @@ def add_hyperlinks(text: str, bill_data: dict) -> str:
         return text
 
     # Link for the bill itself
+    bill_name_regex = r"(\b(H\.R\.|S\.|H\.Res\.|S\.Res\.)\s*\d+\b)"
+    bill_number_str = f"{bill['type'].upper().replace('RES', '.Res. ')}{bill['number']}"
     if bill.get("congress") and bill.get("type") and bill.get("number"):
         bill_url = f"https://www.congress.gov/bill/{bill['congress']}th-congress/{bill['type'].lower()}-bill/{bill['number']}"
-        text = text.replace(f"{bill['type']}{bill['number']}", f"[{bill['type']}{bill['number']}]({bill_url})")
+        text = re.sub(bill_name_regex, f"[{bill_number_str}]({bill_url})", text, flags=re.IGNORECASE)
+
 
     # Links for sponsors and cosponsors
     sponsors = bill.get("sponsors", [])
@@ -178,6 +227,14 @@ def add_hyperlinks(text: str, bill_data: dict) -> str:
             member_url = member.get("url", "").split('?')[0]  # Get base URL
             if member_url:
                  text = text.replace(member.get("fullName"), f"[{member.get('fullName')}]({member_url})")
+
+    # Links for committees
+    committees = bill.get("committees", [])
+    for committee in committees:
+        if committee.get("name"):
+            committee_url = committee.get("url", "").split('?')[0]
+            if committee_url:
+                text = text.replace(committee.get("name"), f"[{committee.get('name')}]({committee_url})")
 
     return text
 

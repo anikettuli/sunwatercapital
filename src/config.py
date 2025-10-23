@@ -27,16 +27,16 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./output/tasks.db")
 
 # --- Target Bills ---
 TARGET_BILLS = [
-    {"id": "hr1", "type": "hr", "congress": 118},
-    {"id": "hr5371", "type": "hr", "congress": 117},
-    {"id": "hr5401", "type": "hr", "congress": 117},
-    {"id": "s2296", "type": "s", "congress": 118},
-    {"id": "s24", "type": "s", "congress": 118},
-    {"id": "s2882", "type": "s", "congress": 117},
-    {"id": "s499", "type": "s", "congress": 118},
-    {"id": "sres412", "type": "sres", "congress": 118},
-    {"id": "hres353", "type": "hres", "congress": 118},
-    {"id": "hr1968", "type": "hr", "congress": 118},
+    {"id": "hr1", "type": "hr", "congress": 119},
+    {"id": "hr5371", "type": "hr", "congress": 119},
+    {"id": "hr5401", "type": "hr", "congress": 119},
+    {"id": "s2296", "type": "s", "congress": 119},
+    {"id": "s24", "type": "s", "congress": 119},
+    {"id": "s2882", "type": "s", "congress": 119},
+    {"id": "s499", "type": "s", "congress": 119},
+    {"id": "sres412", "type": "sres", "congress": 119},
+    {"id": "hres353", "type": "hres", "congress": 119},
+    {"id": "hr1968", "type": "hr", "congress": 119},
 ]
 
 # --- Questions ---

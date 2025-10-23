@@ -1,7 +1,8 @@
 import sqlalchemy
-from sqlalchemy import create_engine, Table, Column, Integer, String, MetaData, Text
+from sqlalchemy import create_engine, Table, Column, Integer, String, MetaData, Text, DateTime
 from sqlalchemy.orm import sessionmaker
 import time
+from datetime import datetime, UTC
 
 from . import config
 
@@ -29,6 +30,9 @@ def setup_database(engine):
        Column('question_id', Integer),
        Column('status', String, default='pending'), # pending, completed, failed
        Column('answer', Text, nullable=True),
+       Column('task', String),
+       Column('question', Text, nullable=True),
+       Column('timestamp', DateTime, default=lambda: datetime.now(UTC)),
     )
     
     meta.create_all(engine)
@@ -58,45 +62,39 @@ class DBManager:
            Column('question_id', Integer),
            Column('status', String, default='pending'), # pending, completed, failed
            Column('answer', Text, nullable=True),
+           Column('task', String),
+           Column('question', Text, nullable=True),
+           Column('timestamp', DateTime, default=lambda: datetime.now(UTC))
         )
 
     def get_session(self):
         return self.Session()
 
-    def store_answer(self, bill_id, question_id, question, answer):
+    def record_answered_question(self, bill_id, question_id, question, answer):
         session = self.get_session()
         try:
             # Check if a task entry already exists
             existing_task = session.query(self.tasks).filter_by(bill_id=bill_id, question_id=question_id).first()
+            
+            task_data = {
+                "bill_id": bill_id,
+                "question_id": question_id,
+                "question": question,
+                "answer": answer,
+                "status": 'completed',
+                "task": 'answer_question',
+                "timestamp": datetime.now(UTC)
+            }
+
             if existing_task:
-                session.query(self.tasks).filter_by(bill_id=bill_id, question_id=question_id).update({
-                    "answer": answer
-                })
+                session.query(self.tasks).filter_by(bill_id=bill_id, question_id=question_id).update(task_data)
             else:
-                ins = self.tasks.insert().values(
-                    bill_id=bill_id,
-                    question_id=question_id,
-                    status='pending',
-                    answer=answer
-                )
+                ins = self.tasks.insert().values(task_data)
                 session.execute(ins)
             session.commit()
         except Exception as e:
             session.rollback()
             print(f"Error saving task to DB: {e}")
-        finally:
-            session.close()
-
-    def mark_answer_complete(self, bill_id, question_id):
-        session = self.get_session()
-        try:
-            session.query(self.tasks).filter_by(bill_id=bill_id, question_id=question_id).update({
-                "status": "completed"
-            })
-            session.commit()
-        except Exception as e:
-            session.rollback()
-            print(f"Error updating task status in DB: {e}")
         finally:
             session.close()
 

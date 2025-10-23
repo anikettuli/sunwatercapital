@@ -85,16 +85,16 @@ The system was benchmarked processing all 10 bills. Here is a breakdown of the p
 ### Wall-Clock Time (Real-World Time)
 This is the actual time elapsed from starting the script to completion.
 
--   **Total Script Execution:** 84 seconds (~1.4 minutes)
+-   **Total Script Execution:** 222 seconds (~3.7 minutes)
     -   *Includes Docker container startup and shutdown.*
--   **Application Processing Time:** 68.55 seconds (~1.1 minutes)
+-   **Application Processing Time:** 205.01 seconds (~3.4 minutes)
     -   *The time from when the application starts processing until the final article is written.*
 
 ### Cumulative Processing Time (Across All Threads)
 This represents the total computational work performed by the system's parallel components.
 
--   **Total Congress.gov API Time:** 9.17 seconds
--   **Total LLM API Time:** 98.70 seconds
+-   **Total Congress.gov API Time:** 87.92 seconds
+-   **Total LLM API Time:** 340.07 seconds
 
 ## Optimization Strategy for Speed and Accuracy
 

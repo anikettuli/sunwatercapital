@@ -10,13 +10,7 @@ import time
 import json
 import os
 
-from . import config, kafka_manager, db_manager
-from .workers import (
-    QueryWorker,
-    ArticleWorker,
-    LinkCheckWorker,
-    ValidatedArticleWorker,
-)
+from . import config, kafka_manager
 from .metrics import metrics
 
 
@@ -44,12 +38,25 @@ def main():
         os.remove(config.OUTPUT_FILE)
     if os.path.exists(config.ANSWERS_FILE):
         os.remove(config.ANSWERS_FILE)
+    
+    db_path = config.DATABASE_URL.split("///")[-1]
+    if os.path.exists(db_path):
+        os.remove(db_path)
+        print(f"Removed existing database file at {db_path}.")
+
     print(f"Cleared output files.")
 
     print("Initializing Kafka topics...")
     kafka_manager.create_kafka_topics()
 
     print("Initializing database...")
+    from . import db_manager  # Import here to ensure it runs after DB deletion
+    from .workers import (
+        QueryWorker,
+        ArticleWorker,
+        LinkCheckWorker,
+        ValidatedArticleWorker,
+    )
     _ = db_manager  # Ensures the singleton is initialized
 
     print("Starting worker threads...")
