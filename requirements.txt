@@ -1,0 +1,5 @@
+kafka-python
+sqlalchemy
+requests
+python-dotenv
+pytest
