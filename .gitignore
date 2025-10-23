@@ -12,10 +12,6 @@ env/
 # Environment variables
 .env
 
-# Local output files
-output/
-tasks.db
-
 # IDE / Editor specific
 .idea/
 .vscode/
