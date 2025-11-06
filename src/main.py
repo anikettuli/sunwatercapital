@@ -60,8 +60,12 @@ def main():
     _ = db_manager  # Ensures the singleton is initialized
 
     print("Starting worker threads...")
-    num_query_workers = 4
-    num_article_workers = 2
+    # Set worker counts to 1 per bill for optimal parallelization
+    num_query_workers = len(config.TARGET_BILLS)
+    num_article_workers = len(config.TARGET_BILLS)
+
+    print(f"  - Query workers: {num_query_workers}")
+    print(f"  - Article workers: {num_article_workers}")
 
     worker_threads = []
     for _ in range(num_query_workers):
@@ -100,7 +104,7 @@ def main():
             with open(config.OUTPUT_FILE, 'r') as f:
                 articles = json.load(f)
                 if len(articles) == len(config.TARGET_BILLS):
-                    print("\n--- All 10 articles generated! ---")
+                    print(f"\n--- All {len(config.TARGET_BILLS)} articles generated! ---")
                     break
         except (FileNotFoundError, json.JSONDecodeError):
             pass
