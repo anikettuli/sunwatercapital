@@ -11,7 +11,7 @@ from kafka import KafkaConsumer, KafkaProducer
 from . import config
 from .config import QUESTIONS
 from .db_manager import db_manager
-from .llm import get_all_bill_data, get_answer_from_bill, generate_article_from_answers, add_hyperlinks
+from .llm import get_all_bill_data, get_answer_from_bill, generate_article_from_answers, add_hyperlinks, normalize_unicode_to_ascii
 from .metrics import file_write_lock
 
 
@@ -294,6 +294,9 @@ class ValidatedArticleWorker(threading.Thread):
             sponsor_bioguide_id = sponsor_info.get("bioguideId", "N/A")
             committees_data = bill_data.get("bill", {}).get("committees", [])
             committee_ids = [c.get("systemCode") for c in committees_data if c.get("systemCode")]
+
+            # Normalize unicode characters to ASCII as a safety measure
+            article_text = normalize_unicode_to_ascii(article_text)
 
             output_data = {
                 "bill_id": bill_id,

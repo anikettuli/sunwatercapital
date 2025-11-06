@@ -26,17 +26,32 @@ CONGRESS_API_BASE_URL = "https://api.congress.gov/v3"
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./output/tasks.db")
 
 # --- Target Bills ---
+# Old bill list (commented out)
+# TARGET_BILLS = [
+#     {"id": "hr1", "type": "hr", "congress": 119},
+#     {"id": "hr5371", "type": "hr", "congress": 119},
+#     {"id": "hr5401", "type": "hr", "congress": 119},
+#     {"id": "s2296", "type": "s", "congress": 119},
+#     {"id": "s24", "type": "s", "congress": 119},
+#     {"id": "s2882", "type": "s", "congress": 119},
+#     {"id": "s499", "type": "s", "congress": 119},
+#     {"id": "sres412", "type": "sres", "congress": 119},
+#     {"id": "hres353", "type": "hres", "congress": 119},
+#     {"id": "hr1968", "type": "hr", "congress": 119},
+# ]
+
+# New bill list
 TARGET_BILLS = [
-    {"id": "hr1", "type": "hr", "congress": 119},
-    {"id": "hr5371", "type": "hr", "congress": 119},
-    {"id": "hr5401", "type": "hr", "congress": 119},
-    {"id": "s2296", "type": "s", "congress": 119},
-    {"id": "s24", "type": "s", "congress": 119},
-    {"id": "s2882", "type": "s", "congress": 119},
-    {"id": "s499", "type": "s", "congress": 119},
-    {"id": "sres412", "type": "sres", "congress": 119},
-    {"id": "hres353", "type": "hres", "congress": 119},
-    {"id": "hr1968", "type": "hr", "congress": 119},
+    {"id": "hr4313", "type": "hr", "congress": 119},
+    {"id": "s2318", "type": "s", "congress": 119},
+    {"id": "hr4550", "type": "hr", "congress": 119},
+    {"id": "hr2965", "type": "hr", "congress": 119},
+    {"id": "s2587", "type": "s", "congress": 119},
+    {"id": "s1278", "type": "s", "congress": 119},
+    {"id": "hr3633", "type": "hr", "congress": 119},
+    {"id": "hr5345", "type": "hr", "congress": 119},
+    {"id": "hr4273", "type": "hr", "congress": 119},
+    {"id": "s2257", "type": "s", "congress": 119},
 ]
 
 # --- Questions ---

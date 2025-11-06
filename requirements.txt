@@ -3,3 +3,4 @@ sqlalchemy
 requests
 python-dotenv
 pytest
+unidecode

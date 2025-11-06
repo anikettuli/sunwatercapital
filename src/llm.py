@@ -9,6 +9,7 @@ import re
 import requests
 import json
 import time
+from unidecode import unidecode
 from .config import (
     LLM_API_BASE,
     LLM_MODEL,
@@ -16,6 +17,22 @@ from .config import (
     EMBEDDING_MODEL,
 )
 from .metrics import metrics
+
+
+def normalize_unicode_to_ascii(text: str) -> str:
+    """
+    Normalizes unicode characters to their ASCII equivalents.
+    
+    Uses the unidecode library to convert unicode characters (like smart quotes,
+    em dashes, etc.) to their ASCII equivalents for proper Markdown rendering.
+    
+    Args:
+        text (str): The text containing unicode characters.
+        
+    Returns:
+        str: The text with unicode characters replaced by ASCII equivalents.
+    """
+    return unidecode(text)
 
 
 def _get_bill_sub_resource(
@@ -143,12 +160,28 @@ def get_answer_from_bill(bill_data: dict, question: str) -> str:
         return f"Error generating answer: Could not connect to LLM."
 
 
+def _load_article_template() -> str:
+    """
+    Loads the article template from the template file.
+    
+    Returns:
+        str: The content of the article template file.
+    """
+    try:
+        with open("./article_template.md", "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        print("Warning: Template file not found at ./article_template.md. Using default prompt.")
+        return ""
+
+
 def generate_article_from_answers(answers: dict) -> str:
     """
     Generates a news-style article from a set of questions and answers.
 
-    This function constructs a prompt with the collected answers and asks the
-    local LLM to write a cohesive, objective news article in Markdown format.
+    This function constructs a prompt with the collected answers and the article
+    template, then asks the local LLM to write a cohesive, objective news article
+    following the Politico/Punchbowl style guide in Markdown format.
 
     Args:
         answers (dict): A dictionary of answers, keyed by question ID.
@@ -158,17 +191,31 @@ def generate_article_from_answers(answers: dict) -> str:
     """
     print("LLM: Generating article from answers.")
 
-    formatted_answers = "\n".join([f"- {q_id}: {answer}" for q_id, answer in answers.items()])
+    # Load the article template
+    template = _load_article_template()
+    
+    formatted_answers = "\n".join([f"- Q{q_id}: {answer}" for q_id, answer in answers.items()])
+    
     prompt = f"""
-    Based on the following questions and answers about a U.S. congressional bill, write a short, high-quality news-style article in Markdown format.
-    - The article should be objective and factual.
-    - Incorporate the information from the answers into a cohesive narrative.
-    - Do not make up information.
-    - Start with a headline.
+You are a professional journalist writing for a publication like Politico or Punchbowl News. Based on the following questions and answers about a U.S. congressional bill, write a high-quality news-style article following the provided template structure and style guidelines.
 
-    Questions and Answers:
-    {formatted_answers}
-    """
+ARTICLE TEMPLATE AND STYLE GUIDE:
+{template}
+
+QUESTIONS AND ANSWERS ABOUT THE BILL:
+{formatted_answers}
+
+INSTRUCTIONS:
+1. Follow the template structure exactly: Headline, Byline/Dateline, Opening Paragraph (Lede), Immediate Context, Inside the Room, Politics, What's Next, and Closing Graf.
+2. Write in the style described in the template - tight, active, insider-sounding headlines; brisk ledes with "moment + meaning"; focus on power dynamics and strategic positioning.
+3. Use only the information provided in the answers. Do not make up information, quotes, or details not present in the answers.
+4. If certain information is not available (e.g., no hearings, no amendments, no votes), adapt the structure accordingly but maintain the overall flow.
+5. IMPORTANT: Use only standard ASCII characters. Use straight quotes (') and (") instead of curly quotes, use hyphens (-) instead of en dashes or em dashes, and avoid any unicode characters.
+6. Write the article in Markdown format with proper formatting.
+7. Make the headline tight, active, and insider-sounding - signaling motion or tension, never just describing.
+8. The byline should follow the format: "By [Reporter Name] – [Date]" (you can use a generic reporter name and current date).
+9. Ensure the article flows naturally and reads like a professional Hill publication piece.
+"""
 
     try:
         start_time = time.time()
@@ -183,7 +230,10 @@ def generate_article_from_answers(answers: dict) -> str:
         )
         response.raise_for_status()
         metrics.add_llm_api_time(time.time() - start_time)
-        return response.json()["choices"][0]["message"]["content"].strip()
+        article_text = response.json()["choices"][0]["message"]["content"].strip()
+        # Normalize unicode characters to ASCII
+        article_text = normalize_unicode_to_ascii(article_text)
+        return article_text
     except requests.exceptions.RequestException as e:
         print(f"Error calling LLM API for article generation: {e}")
         return "Error: Could not generate article."
