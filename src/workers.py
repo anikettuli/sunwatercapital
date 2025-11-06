@@ -5,6 +5,7 @@ specific Kafka topic, performs a task, and may produce messages to another
 topic for the next stage of processing.
 """
 import json
+import os
 import threading
 
 from kafka import KafkaConsumer, KafkaProducer
@@ -298,6 +299,17 @@ class ValidatedArticleWorker(threading.Thread):
             # Normalize unicode characters to ASCII as a safety measure
             article_text = normalize_unicode_to_ascii(article_text)
 
+            # Decode escape sequences (like \n to actual newlines) for markdown file
+            # This handles cases where escape sequences are stored as literal strings
+            # Replace common escape sequences manually to avoid double-decoding issues
+            article_text_decoded = (
+                article_text
+                .replace('\\n', '\n')
+                .replace('\\t', '\t')
+                .replace('\\r', '\r')
+                .replace('\\\\', '\\')  # Handle escaped backslashes last
+            )
+
             output_data = {
                 "bill_id": bill_id,
                 "bill_title": bill_title,
@@ -306,6 +318,7 @@ class ValidatedArticleWorker(threading.Thread):
                 "article_content": article_text,
             }
 
+            # Write to JSON file
             output_file = "output/articles.json"
             try:
                 with open(output_file, "r+") as f:
@@ -320,4 +333,10 @@ class ValidatedArticleWorker(threading.Thread):
                 with open(output_file, "w") as f:
                     json.dump([output_data], f, indent=4)
 
-            print(f"[Validated Article Worker] Successfully wrote final article for {bill_id.upper()} to {output_file}")
+            # Write to markdown file
+            output_dir = os.path.dirname(output_file)
+            md_file = os.path.join(output_dir, f"{bill_id}.md")
+            with open(md_file, "w", encoding="utf-8") as f:
+                f.write(article_text_decoded)
+
+            print(f"[Validated Article Worker] Successfully wrote final article for {bill_id.upper()} to {output_file} and {md_file}")
