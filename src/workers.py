@@ -12,7 +12,7 @@ from kafka import KafkaConsumer, KafkaProducer
 from . import config
 from .config import QUESTIONS
 from .db_manager import db_manager
-from .llm import get_all_bill_data, get_answer_from_bill, generate_article_from_answers, add_hyperlinks, normalize_unicode_to_ascii
+from .llm import get_all_bill_data, get_answer_from_bill, generate_article_from_answers, normalize_unicode_to_ascii
 from .metrics import file_write_lock
 
 
@@ -156,10 +156,7 @@ class ArticleWorker(threading.Thread):
             bill_data = get_all_bill_data(bill_id, bill_type, congress, config.CONGRESS_API_KEY)
 
             print(f"[Article Worker] Sending to LLM to generate article for {bill_id.upper()}.")
-            article_text = generate_article_from_answers(answers)
-
-            print(f"[Article Worker] Adding hyperlinks for {bill_id.upper()}.")
-            article_text = add_hyperlinks(article_text, bill_data)
+            article_text = generate_article_from_answers(answers, bill_data)
 
             self.producer.send(
                 config.KAFKA_LINK_CHECK_TOPIC,
@@ -291,6 +288,9 @@ class ValidatedArticleWorker(threading.Thread):
             print(f"\n[Validated Article Worker] Received task for Bill {bill_id.upper()}")
 
             bill_title = bill_data.get("bill", {}).get("title", "N/A")
+            # Normalize unicode characters in bill_title to ASCII
+            bill_title = normalize_unicode_to_ascii(bill_title)
+            
             sponsor_info = bill_data.get("bill", {}).get("sponsors", [{}])[0]
             sponsor_bioguide_id = sponsor_info.get("bioguideId", "N/A")
             committees_data = bill_data.get("bill", {}).get("committees", [])
