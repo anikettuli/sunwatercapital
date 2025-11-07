@@ -12,12 +12,12 @@ The system uses a Retrieval-Augmented Generation (RAG) architecture built on Pyt
 -   **Kafka**: Manages the flow of tasks between workers through several topics (`query.input`, `article.input`, etc.).
 -   **Worker Scripts (`src/workers.py`)**:
     -   `QueryWorker`: Fetches bill data from the Congress.gov API and uses an LLM to answer specific questions.
-    -   `ArticleWorker`: Aggregates the answers and generates a cohesive news article using an LLM.
-    -   `LinkCheckWorker`: Validates hyperlinks within the generated article.
+    -   `ArticleWorker`: Aggregates the answers and generates a cohesive news article using an LLM, following a structured template (`src/article_template.md`) in the style of Politico/Punchbowl News.
+    -   `LinkCheckWorker`: Validates hyperlinks within the generated article by checking HTTP status codes.
     -   `ValidatedArticleWorker`: Writes the final, validated article to both JSON (`articles.json`) and individual markdown files (`{bill_id}.md`).
 -   **State Management (`src/db_manager.py`)**: A SQLite database tracks the status of each question for each bill.
 -   **Kafka Integration (`src/kafka_manager.py`)**: Handles the creation of Kafka producers, consumers, and topics.
--   **LLM (`src/llm.py`)**: Interfaces with a local open-source Large Language Model (via LM Studio) for question answering and article generation.
+-   **LLM (`src/llm.py`)**: Interfaces with a local open-source Large Language Model (via LM Studio) for question answering and article generation. Automatically generates hyperlinks to bills, members, committees, amendments, hearings, votes, and reports when URLs are available. Normalizes Unicode characters to ASCII for proper Markdown rendering.
 
 ## Setup Instructions
 
@@ -87,16 +87,16 @@ The system was benchmarked processing all 10 bills. Here is a breakdown of the p
 ### Wall-Clock Time (Real-World Time)
 This is the actual time elapsed from starting the script to completion.
 
--   **Total Script Execution:** 153 seconds (~2.6 minutes)
+-   **Total Script Execution:** ~175 seconds (~2.9 minutes)
     -   *Includes Docker container startup and shutdown.*
--   **Application Processing Time:** 144.51 seconds (~2.4 minutes)
+-   **Application Processing Time:** ~161.51 seconds (~2.7 minutes)
     -   *The time from when the application starts processing until the final article is written.*
 
 ### Cumulative Processing Time (Across All Threads)
 This represents the total computational work performed by the system's parallel components.
 
--   **Total Congress.gov API Time:** 104.86 seconds
--   **Total LLM API Time:** 374.53 seconds
+-   **Total Congress.gov API Time:** ~94.98 seconds
+-   **Total LLM API Time:** ~308.25 seconds
 
 ## Optimization Strategy for Speed and Accuracy
 
@@ -106,7 +106,14 @@ The primary approach I took to optimize for speed was to introduce parallelism a
 
 ### Accuracy
 
-To ensure high accuracy and prevent LLM hallucinations, the system was designed around a strict Retrieval-Augmented Generation (RAG) pattern. Every piece of generated content is directly grounded in structured data fetched from the Congress.gov API. The process is broken down into two distinct LLM steps: first, answering a set of specific, targeted questions based on the provided data, and second, generating a cohesive article from those factual answers. This separation prevents the LLM from straying from the source material. Furthermore, accuracy is enhanced by programmatically generating hyperlinks to the source bills and sponsors on Congress.gov and including a dedicated `LinkCheckWorker` to validate that all URLs resolve correctly.
+To ensure high accuracy and prevent LLM hallucinations, the system was designed around a strict Retrieval-Augmented Generation (RAG) pattern. Every piece of generated content is directly grounded in structured data fetched from the Congress.gov API. The process is broken down into two distinct LLM steps: first, answering a set of specific, targeted questions based on the provided data, and second, generating a cohesive article from those factual answers. This separation prevents the LLM from straying from the source material.
+
+Articles follow a structured template (`src/article_template.md`) inspired by Politico and Punchbowl News, ensuring consistent formatting and style. The system automatically generates hyperlinks to bills, members, committees, amendments, hearings, votes, and reports when URLs are available from the Congress.gov API. Links are placed directly on entity names (e.g., `[H.R.3633](URL)`) rather than next to them, and the system only creates links when URLs are available to avoid broken references.
+
+Accuracy is further enhanced by:
+- **Unicode normalization**: All Unicode characters (smart quotes, em dashes, etc.) are converted to ASCII equivalents for proper Markdown rendering
+- **Link validation**: The `LinkCheckWorker` validates all hyperlinks by checking HTTP status codes
+- **Strict linking rules**: The LLM is instructed to never create brackets without URLs, ensuring all links are valid
 
 ## Output Files
 

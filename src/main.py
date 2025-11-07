@@ -31,20 +31,22 @@ def main():
     app_start_time = time.time()
     print("--- Starting RAG News Generation System ---")
 
+    # Ensure output directory exists
     output_dir = os.path.dirname(config.OUTPUT_FILE)
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    if os.path.exists(config.OUTPUT_FILE):
-        os.remove(config.OUTPUT_FILE)
-    if os.path.exists(config.ANSWERS_FILE):
-        os.remove(config.ANSWERS_FILE)
+    os.makedirs(output_dir, exist_ok=True)
     
+    # Clear previous output files
+    for file_path in [config.OUTPUT_FILE, config.ANSWERS_FILE]:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    
+    # Clear database
     db_path = config.DATABASE_URL.split("///")[-1]
     if os.path.exists(db_path):
         os.remove(db_path)
         print(f"Removed existing database file at {db_path}.")
 
-    print(f"Cleared output files.")
+    print("Cleared output files.")
 
     print("Initializing Kafka topics...")
     kafka_manager.create_kafka_topics()
@@ -60,24 +62,17 @@ def main():
     _ = db_manager  # Ensures the singleton is initialized
 
     print("Starting worker threads...")
-    # Set worker counts to 1 per bill for optimal parallelization
-    num_query_workers = len(config.TARGET_BILLS)
-    num_article_workers = len(config.TARGET_BILLS)
+    num_workers = len(config.TARGET_BILLS)
+    print(f"  - Query workers: {num_workers}")
+    print(f"  - Article workers: {num_workers}")
 
-    print(f"  - Query workers: {num_query_workers}")
-    print(f"  - Article workers: {num_article_workers}")
-
-    worker_threads = []
-    for _ in range(num_query_workers):
-        worker_threads.append(QueryWorker())
-    for _ in range(num_article_workers):
-        worker_threads.append(ArticleWorker())
-
-    worker_threads.extend([
-        LinkCheckWorker(),
-        ValidatedArticleWorker()
-    ])
-
+    # Create and start all worker threads
+    worker_threads = (
+        [QueryWorker() for _ in range(num_workers)] +
+        [ArticleWorker() for _ in range(num_workers)] +
+        [LinkCheckWorker(), ValidatedArticleWorker()]
+    )
+    
     for worker in worker_threads:
         worker.start()
 
@@ -99,24 +94,31 @@ def main():
     producer.flush()
     print("\nAll initial tasks have been dispatched.")
 
+    # Wait for all articles to be generated
     while True:
         try:
             with open(config.OUTPUT_FILE, 'r') as f:
                 articles = json.load(f)
-                if len(articles) == len(config.TARGET_BILLS):
+                if len(articles) >= len(config.TARGET_BILLS):
                     print(f"\n--- All {len(config.TARGET_BILLS)} articles generated! ---")
                     break
         except (FileNotFoundError, json.JSONDecodeError):
             pass
-
         time.sleep(0.5)
 
     end_time = time.time()
     total_time = end_time - app_start_time
-    print(f"Total application processing time: {total_time:.2f} seconds.")
-    print(f"  - Time spent on Congress.gov API calls: {metrics.congress_api_time:.2f} seconds.")
-    print(f"  - Time spent on LLM API calls: {metrics.llm_api_time:.2f} seconds.")
-    print(f"Output written to {config.OUTPUT_FILE}")
+    print(f"\n{'='*60}", flush=True)
+    print(f"PERFORMANCE METRICS", flush=True)
+    print(f"{'='*60}", flush=True)
+    print(f"Total application processing time: {total_time:.2f} seconds.", flush=True)
+    print(f"  - Time spent on Congress.gov API calls: {metrics.congress_api_time:.2f} seconds.", flush=True)
+    print(f"  - Time spent on LLM API calls: {metrics.llm_api_time:.2f} seconds.", flush=True)
+    print(f"{'='*60}", flush=True)
+    print(f"Output written to {config.OUTPUT_FILE}", flush=True)
+    
+    # Small delay to ensure all output is flushed before container exit
+    time.sleep(1)
 
 
 if __name__ == "__main__":

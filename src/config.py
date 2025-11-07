@@ -11,12 +11,20 @@ load_dotenv()
 
 # --- Kafka Configuration ---
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-TOPICS = ["query.input", "article.input", "error.output"]
 KAFKA_QUERY_TOPIC = "query.input"
 KAFKA_ARTICLE_TOPIC = "article.input"
 KAFKA_LINK_CHECK_TOPIC = "link.check.input"
 KAFKA_ARTICLE_VALIDATED_TOPIC = "article.validated.input"
 KAFKA_ERROR_TOPIC = "error.output"
+
+# All Kafka topics (for topic creation)
+TOPICS = [
+    KAFKA_QUERY_TOPIC,
+    KAFKA_ARTICLE_TOPIC,
+    KAFKA_LINK_CHECK_TOPIC,
+    KAFKA_ARTICLE_VALIDATED_TOPIC,
+    KAFKA_ERROR_TOPIC,
+]
 
 # --- Congress.gov API ---
 CONGRESS_API_KEY = os.getenv("CONGRESS_API_KEY")

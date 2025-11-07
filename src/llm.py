@@ -51,38 +51,37 @@ def _get_bill_sub_resource(
         return {}
 
 
+def _extract_bill_number(bill_id: str) -> str:
+    """Extracts bill number from bill_id (e.g., 'hr4313' -> '4313')."""
+    match = re.match(r"[a-zA-Z]+(\d+)", bill_id)
+    if not match:
+        raise ValueError(f"Invalid bill_id format: {bill_id}")
+    return match.group(1)
+
+
 def get_all_bill_data(
     bill_id: str, bill_type: str, congress: str, api_key: str
 ) -> dict:
     """
     Fetches comprehensive data for a bill including details, amendments, committees, hearings, votes, and reports.
     """
-    match = re.match(r"[a-zA-Z]+(\d+)", bill_id)
-    if not match:
-        print(f"Error: Invalid bill_id format: {bill_id}")
+    try:
+        bill_number = _extract_bill_number(bill_id)
+    except ValueError as e:
+        print(f"Error: {e}")
         return {}
-    bill_number = match.group(1)
 
-    base_url = (
-        f"https://api.congress.gov/v3/bill/{congress}/{bill_type}/{bill_number}"
-    )
-
+    base_url = f"https://api.congress.gov/v3/bill/{congress}/{bill_type}/{bill_number}"
     bill_data = get_bill_data(bill_id, bill_type, congress, api_key)
+    
     if not bill_data or "bill" not in bill_data:
-        return {}  # Stop if the main bill data failed
+        return {}
 
-    amendments = _get_bill_sub_resource(base_url, api_key, "amendments")
-    committees = _get_bill_sub_resource(base_url, api_key, "committees")
-    hearings = _get_bill_sub_resource(base_url, api_key, "hearings")
-    votes = _get_bill_sub_resource(base_url, api_key, "votes")
-    reports = _get_bill_sub_resource(base_url, api_key, "reports")
-
-    # Combine all data into one dictionary
-    bill_data["bill"]["amendments"] = amendments.get("amendments", [])
-    bill_data["bill"]["committees"] = committees.get("committees", [])
-    bill_data["bill"]["hearings"] = hearings.get("hearings", [])
-    bill_data["bill"]["votes"] = votes.get("votes", [])
-    bill_data["bill"]["reports"] = reports.get("reports", [])
+    # Fetch all sub-resources
+    sub_resources = ["amendments", "committees", "hearings", "votes", "reports"]
+    for resource in sub_resources:
+        resource_data = _get_bill_sub_resource(base_url, api_key, resource)
+        bill_data["bill"][resource] = resource_data.get(resource, [])
 
     return bill_data
 
@@ -98,14 +97,13 @@ def get_bill_data(bill_id: str, bill_type: str, congress: str, api_key: str) -> 
         api_key (str): The API key for accessing the Congress.gov API.
 
     Returns:
-        dict: A dictionary containing the bill's data, or an empty dictionary
-              if the request fails.
+        dict: A dictionary containing the bill's data, or an empty dictionary if the request fails.
     """
-    match = re.match(r"[a-zA-Z]+(\d+)", bill_id)
-    if not match:
-        print(f"Error: Invalid bill_id format: {bill_id}")
+    try:
+        bill_number = _extract_bill_number(bill_id)
+    except ValueError as e:
+        print(f"Error: {e}")
         return {}
-    bill_number = match.group(1)
 
     url = f"https://api.congress.gov/v3/bill/{congress}/{bill_type}/{bill_number}?api_key={api_key}"
 
@@ -170,14 +168,21 @@ def _load_article_template() -> str:
     """
     Loads the article template from the template file.
     
+    The app runs from /app (WORKDIR in Dockerfile), and the template is at
+    src/article_template.md relative to that directory.
+    
     Returns:
         str: The content of the article template file.
     """
+    template_path = "src/article_template.md"
     try:
-        with open("./article_template.md", "r", encoding="utf-8") as f:
+        with open(template_path, "r", encoding="utf-8") as f:
             return f.read()
     except FileNotFoundError:
-        print("Warning: Template file not found at ./article_template.md. Using default prompt.")
+        print(f"Warning: Template file not found at {template_path}. Using default prompt.")
+        return ""
+    except Exception as e:
+        print(f"Warning: Error reading template file at {template_path}: {e}. Using default prompt.")
         return ""
 
 
@@ -209,6 +214,10 @@ def generate_article_from_answers(answers: dict, bill_data: dict = None) -> str:
         bill = bill_data.get("bill", {})
         links = []
         
+        # Helper to clean URL (remove query params)
+        def clean_url(url: str) -> str:
+            return url.split('?')[0] if url else ""
+        
         # Bill URL
         if bill.get("congress") and bill.get("type") and bill.get("number"):
             bill_url = f"https://www.congress.gov/bill/{bill['congress']}th-congress/{bill['type'].lower()}-bill/{bill['number']}"
@@ -217,64 +226,45 @@ def generate_article_from_answers(answers: dict, bill_data: dict = None) -> str:
         
         # Member URLs (sponsors and cosponsors)
         sponsors = bill.get("sponsors", [])
-        cosponsors_data = bill.get("cosponsors", {})
-        cosponsors = cosponsors_data.get("items", []) if isinstance(cosponsors_data, dict) else []
-        members = sponsors + cosponsors
-        for member in members:
+        cosponsors = bill.get("cosponsors", {}).get("items", []) if isinstance(bill.get("cosponsors"), dict) else []
+        for member in sponsors + cosponsors:
             if member.get("fullName") and member.get("url"):
-                member_url = member.get("url", "").split('?')[0]
-                full_name = member.get("fullName", "")
-                links.append(f"- Member: {full_name} -> {member_url}")
+                links.append(f"- Member: {member.get('fullName')} -> {clean_url(member.get('url'))}")
         
         # Committee URLs
-        committees = bill.get("committees", [])
-        for committee in committees:
+        for committee in bill.get("committees", []):
             if committee.get("name") and committee.get("url"):
-                committee_url = committee.get("url", "").split('?')[0]
-                links.append(f"- Committee: {committee.get('name')} -> {committee_url}")
+                links.append(f"- Committee: {committee.get('name')} -> {clean_url(committee.get('url'))}")
         
-        # Amendment URLs - include multiple formats for matching
-        amendments = bill.get("amendments", [])
-        for amendment in amendments:
+        # Amendment URLs - include multiple formats
+        for amendment in bill.get("amendments", []):
             if amendment.get("number") and amendment.get("url"):
-                amendment_url = amendment.get("url", "").split('?')[0]
-                amendment_number = amendment.get("number", "")
-                # Include both formats: "Amendment 48" and "HAMDT 48" or "SAMDT 48"
+                url = clean_url(amendment.get("url"))
+                number = amendment.get("number")
                 amendment_type = amendment.get("type", "").upper()
                 if amendment_type:
-                    links.append(f"- Amendment: {amendment_type} {amendment_number} -> {amendment_url}")
-                links.append(f"- Amendment: Amendment {amendment_number} -> {amendment_url}")
+                    links.append(f"- Amendment: {amendment_type} {number} -> {url}")
+                links.append(f"- Amendment: Amendment {number} -> {url}")
         
-        # Hearing URLs - check both hearings array and actions that mention hearings
-        hearings = bill.get("hearings", [])
-        if isinstance(hearings, list):
-            for hearing in hearings:
-                if isinstance(hearing, dict) and hearing.get("url"):
-                    hearing_url = hearing.get("url", "").split('?')[0]
-                    hearing_title = hearing.get("title") or hearing.get("name") or f"Hearing {hearing.get('number', '')}"
-                    links.append(f"- Hearing: {hearing_title} -> {hearing_url}")
+        # Hearing, Vote, and Report URLs - similar pattern
+        for hearing in bill.get("hearings", []):
+            if isinstance(hearing, dict) and hearing.get("url"):
+                title = hearing.get("title") or hearing.get("name") or f"Hearing {hearing.get('number', '')}"
+                links.append(f"- Hearing: {title} -> {clean_url(hearing.get('url'))}")
         
-        # Vote URLs - check votes array and also look in actions
-        votes = bill.get("votes", [])
-        if isinstance(votes, list):
-            for vote in votes:
-                if isinstance(vote, dict) and vote.get("url"):
-                    vote_url = vote.get("url", "").split('?')[0]
-                    vote_desc = vote.get("description") or vote.get("title") or f"Vote {vote.get('number', '')}"
-                    links.append(f"- Vote: {vote_desc} -> {vote_url}")
+        for vote in bill.get("votes", []):
+            if isinstance(vote, dict) and vote.get("url"):
+                desc = vote.get("description") or vote.get("title") or f"Vote {vote.get('number', '')}"
+                links.append(f"- Vote: {desc} -> {clean_url(vote.get('url'))}")
         
-        # Report URLs - check reports array
-        reports = bill.get("reports", [])
-        if isinstance(reports, list):
-            for report in reports:
-                if isinstance(report, dict) and report.get("url"):
-                    report_url = report.get("url", "").split('?')[0]
-                    report_citation = report.get("citation") or report.get("number") or f"Report {report.get('number', '')}"
-                    # Also include common formats like "House Report 119-199" or "H. Rept. 119-199"
-                    if report.get("number"):
-                        links.append(f"- Report: House Report {report.get('number')} -> {report_url}")
-                        links.append(f"- Report: H. Rept. {report.get('number')} -> {report_url}")
-                    links.append(f"- Report: {report_citation} -> {report_url}")
+        for report in bill.get("reports", []):
+            if isinstance(report, dict) and report.get("url"):
+                url = clean_url(report.get("url"))
+                citation = report.get("citation") or report.get("number") or f"Report {report.get('number', '')}"
+                links.append(f"- Report: {citation} -> {url}")
+                if report.get("number"):
+                    links.append(f"- Report: House Report {report.get('number')} -> {url}")
+                    links.append(f"- Report: H. Rept. {report.get('number')} -> {url}")
         
         if links:
             link_info = f"""
@@ -283,61 +273,95 @@ AVAILABLE HYPERLINKS:
 When mentioning any of the following entities in your article, include them as inline Markdown links using the format [Entity Name](URL). 
 
 CRITICAL RULES:
+- ONLY create links for entities that have URLs listed below. DO NOT use brackets [like this] without a URL - if there's no URL available, just write the entity name normally without brackets.
 - The link text MUST match EXACTLY how you mention the entity in your text
 - The link should go ON TOP OF the entity name, not next to it
 - For example: If you write "Amendment HAMDT 48", use "[Amendment HAMDT 48](URL)" - match the exact text including "HAMDT"
-- For bills: Use the exact format shown (e.g., "[H.R.3633](URL)" or "[S. 2587](URL)")
+- For bills: Use the exact format shown (e.g., "[H.R.3633](URL)" or "[S. 2587](URL)") ONLY if a URL is provided below
 - For members: Use ONLY the member's name in the link text. Do NOT include party/state info in brackets inside the link. 
   Example: Write "[Rep. John Smith](URL)" NOT "[Rep. John Smith [R-TX-5](URL)]"
   If you mention party/state info, put it OUTSIDE the link: "[Rep. John Smith](URL) (R-TX-5)"
 - For committees: Use the exact committee name provided. Only link committees that have URLs in the list below.
+- NEVER write brackets without URLs. If an entity is not in the list below, write it normally without brackets.
 
 Available links:
 {chr(10).join(links)}
 """
+        else:
+            link_info = """
+
+HYPERLINK INSTRUCTIONS:
+- NO URLs are available for this bill. DO NOT use brackets [like this] anywhere in your article.
+- Write all entity names normally without brackets (e.g., write "H.R.3633" not "[H.R.3633]")
+- Write member names normally (e.g., "Rep. John Smith" not "[Rep. John Smith]")
+- Write committee names normally (e.g., "Ways and Means Committee" not "[Ways and Means Committee]")
+- NEVER create brackets without URLs - this creates broken links and poor formatting.
+"""
     
     prompt = f"""
-You are a professional journalist writing for a publication like Politico or Punchbowl News. Based on the following questions and answers about a U.S. congressional bill, write a high-quality news-style article following the provided template structure and style guidelines.
-
-ARTICLE TEMPLATE AND STYLE GUIDE:
-{template}
+You are a professional journalist writing for Politico or Punchbowl News. Write a news article about a congressional bill using ONLY the information provided in the Q&A section below.
 
 QUESTIONS AND ANSWERS ABOUT THE BILL:
 {formatted_answers}
 {link_info}
-INSTRUCTIONS:
-1. Follow the template structure EXACTLY: 
-   - Headline: Use ## for the headline (h2), make it tight, active, and insider-sounding - signaling motion or tension, never just describing.
-   - Byline: Format as "By [Reporter Name] – [Date]" (use a generic reporter name and current date)
-   - Opening Paragraph (Lede): One to two sentences capturing the action AND its Hill significance
-   - Section Headers: Use **bold** formatting for ALL section headers:
-     * **Immediate Context:** (or **PARAGRAPH 2: Immediate Context / Stakes**)
-     * **Inside the Room:** (or **PARAGRAPH 3–4: Inside the Room**)
-     * **Politics:** (or **PARAGRAPH 5: The Politics**)
-     * **What's Next:** (or **PARAGRAPH 6: What's Next**)
-     * **Closing Graf:** (or **CLOSING GRAF**)
-   - Each section should be separated by blank lines
 
-2. Write in the style described in the template - tight, active, insider-sounding headlines; brisk ledes with "moment + meaning"; focus on power dynamics and strategic positioning.
+ARTICLE STRUCTURE:
+Write a news article with the following structure:
 
-3. Use only the information provided in the answers. Do not make up information, quotes, or details not present in the answers.
+1. HEADLINE (use ### markdown)
+   - Make it tight, active, and insider-sounding
+   - Signal motion or tension, never just describe
+   - Example format: "Committee Advances [Bill Topic] Amid [Political Context]"
 
-4. If certain information is not available (e.g., no hearings, no amendments, no votes), adapt the structure accordingly but maintain the overall flow.
+2. BYLINE
+   - Format: "By [Reporter Name] - [Date]"
+   - Use a generic reporter name and the current date
 
-5. IMPORTANT: Use only standard ASCII characters. Use straight quotes (') and (") instead of curly quotes, use hyphens (-) instead of en dashes or em dashes, and avoid any unicode characters.
+3. OPENING PARAGRAPH (Lede)
+   - One to two sentences capturing the action AND its Hill significance
+   - Include: what happened, when, which committee/chamber, why it matters
 
-6. Write the article in Markdown format with proper formatting. Use **bold** for section headers, not plain text.
+4. IMMEDIATE CONTEXT
+   - Why this matters right now
+   - Tie to timing, leadership goals, or broader negotiations
 
-7. CRITICAL: When mentioning bills, members, committees, amendments, hearings, votes, or reports, use the provided URLs to create inline Markdown links. The link text should match EXACTLY how you mention the entity. For example:
-   - If you write "Amendment HAMDT 48", use "[Amendment HAMDT 48](URL)" not "[Amendment 48](URL)"
-   - If you write "H.R.3633", use "[H.R.3633](URL)"
-   - For members: Use ONLY the member's name in the link text. Do NOT include party/state info in brackets inside the link.
-     CORRECT: "[Rep. John Smith](URL)" or "[Rep. John Smith](URL) (R-TX-5)"
-     WRONG: "[Rep. John Smith [R-TX-5](URL)]"
-   - Place links directly on top of the entity name, not next to it (e.g., "[H.R.3633](URL)" not "H.R.3633 (link)")
-   - Only link entities that have URLs provided in the AVAILABLE HYPERLINKS section below
+5. INSIDE THE ROOM (if hearings/markups occurred)
+   - Describe markup/hearing dynamics
+   - Mention amendments if any were proposed
+   - Include vote tallies if available
+   - Use transitions like "During the markup..." or "The committee considered..."
 
-8. Ensure the article flows naturally and reads like a professional Hill publication piece.
+6. THE POLITICS
+   - Explain power dynamics or strategic positioning
+   - How this fits the larger Hill story
+   - Bipartisan dynamics or party-line tensions
+
+7. WHAT'S NEXT
+   - What happens next procedurally
+   - Floor votes, companion bills, or next committee action
+
+8. CLOSING GRAF
+   - Forward-looking or reflective note
+   - Quote from sponsor/key member if mentioned in answers
+   - Hint at bigger stakes or challenges ahead
+
+CRITICAL RULES:
+- Use ONLY information from the Q&A answers above. If information isn't in the answers, DON'T include it.
+- If the answers say "no amendments" or "no votes" - then DON'T invent any.
+- If the answers say "no hearings" - skip or minimize the "Inside the Room" section.
+- DO NOT invent vote tallies, amendment details, or quotes not in the answers.
+- When answers are vague about votes (e.g., "placed on calendar"), DON'T fabricate specific vote counts.
+- Use straight quotes (') and (") - no curly quotes.
+- Use hyphens (-) - no em dashes or en dashes.
+- Write in Markdown format.
+- Include hyperlinks using the URLs provided in the AVAILABLE HYPERLINKS section above.
+- Link format: [Entity Name](URL) - place links directly on entity names, not next to them.
+
+STYLE:
+- Tight, active writing
+- Insider tone focusing on process and power dynamics
+- Brisk ledes with "moment + meaning"
+- Congressional jargon when appropriate (markup, floor action, etc.)
 """
 
     try:

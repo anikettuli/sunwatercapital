@@ -16,6 +16,23 @@ from .llm import get_all_bill_data, get_answer_from_bill, generate_article_from_
 from .metrics import file_write_lock
 
 
+def _append_to_json_file(file_path, new_item):
+    """Thread-safe helper to append an item to a JSON file."""
+    with file_write_lock:
+        try:
+            with open(file_path, "r+") as f:
+                try:
+                    data = json.load(f)
+                except json.JSONDecodeError:
+                    data = []
+                data.append(new_item)
+                f.seek(0)
+                json.dump(data, f, indent=4)
+        except FileNotFoundError:
+            with open(file_path, "w") as f:
+                json.dump([new_item], f, indent=4)
+
+
 class QueryWorker(threading.Thread):
     """
     Consumes tasks from the query topic to answer questions about bills.
@@ -95,17 +112,7 @@ class QueryWorker(threading.Thread):
         """
         answers = self.db_manager.get_answers_for_bill(bill_id)
         output_data = {"bill_id": bill_id, "answers": answers}
-
-        with file_write_lock:
-            try:
-                with open(config.ANSWERS_FILE, "r+") as f:
-                    all_answers = json.load(f)
-                    all_answers.append(output_data)
-                    f.seek(0)
-                    json.dump(all_answers, f, indent=4)
-            except (FileNotFoundError, json.JSONDecodeError):
-                with open(config.ANSWERS_FILE, "w") as f:
-                    json.dump([output_data], f, indent=4)
+        _append_to_json_file(config.ANSWERS_FILE, output_data)
         print(f"[Query Worker] Saved all answers for {bill_id.upper()} to {config.ANSWERS_FILE}")
 
 
@@ -237,8 +244,10 @@ class LinkCheckWorker(threading.Thread):
         import re
         import requests
 
-        urls = re.findall(r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+", text)
+        url_pattern = r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
+        urls = re.findall(url_pattern, text)
         broken_links = []
+        
         for url in urls:
             try:
                 response = requests.head(url, allow_redirects=True, timeout=5)
@@ -319,24 +328,12 @@ class ValidatedArticleWorker(threading.Thread):
             }
 
             # Write to JSON file
-            output_file = "output/articles.json"
-            try:
-                with open(output_file, "r+") as f:
-                    try:
-                        all_articles = json.load(f)
-                    except json.JSONDecodeError:
-                        all_articles = []
-                    all_articles.append(output_data)
-                    f.seek(0)
-                    json.dump(all_articles, f, indent=4)
-            except FileNotFoundError:
-                with open(output_file, "w") as f:
-                    json.dump([output_data], f, indent=4)
+            _append_to_json_file(config.OUTPUT_FILE, output_data)
 
             # Write to markdown file
-            output_dir = os.path.dirname(output_file)
+            output_dir = os.path.dirname(config.OUTPUT_FILE)
             md_file = os.path.join(output_dir, f"{bill_id}.md")
             with open(md_file, "w", encoding="utf-8") as f:
                 f.write(article_text_decoded)
 
-            print(f"[Validated Article Worker] Successfully wrote final article for {bill_id.upper()} to {output_file} and {md_file}")
+            print(f"[Validated Article Worker] Successfully wrote final article for {bill_id.upper()} to {config.OUTPUT_FILE} and {md_file}")
